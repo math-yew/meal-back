@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Environment Variables (IMPORTANT: Never push your TiDB passwords!)
+.env
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Build folders
+dist/
+build/

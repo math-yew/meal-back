@@ -1,0 +1,26 @@
+{
+  "name": "meal-back",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/math-yew/meal-back.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/math-yew/meal-back/issues"
+  },
+  "homepage": "https://github.com/math-yew/meal-back#readme",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "mysql2": "^3.20.0",
+    "sequelize": "^6.37.8"
+  }
+}
