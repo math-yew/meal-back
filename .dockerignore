@@ -1,0 +1,18 @@
+# Ignore local dependencies (the server will install its own)
+node_modules
+npm-debug.log
+
+# Ignore local environment secrets
+.env
+
+# Ignore version control and IDE config
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# Ignore documentation and tests to keep the image slim
+README.md
+tests/
+docs/

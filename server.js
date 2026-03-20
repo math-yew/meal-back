@@ -17,7 +17,7 @@ const sequelize = new Sequelize(
     dialectOptions: {
       ssl: {
         minVersion: 'TLSv1.2',
-        rejectUnauthorized: true, // TiDB Cloud works best with this
+        rejectUnauthorized: true 
       }
     }
   }
