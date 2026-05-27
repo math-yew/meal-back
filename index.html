@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TiDB Recipe Planner</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        .line-clamp-3 {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;  
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const API_URL = '';
+        // const API_URL = 'http://localhost:8080';
+
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [recipes, setRecipes] = useState([]);
+            const [view, setView] = useState('loading'); // 'loading', 'login', 'list', 'add', 'edit', 'details'
+            const [selectedRecipe, setSelectedRecipe] = useState(null);
+            const [loadingRecipes, setLoadingRecipes] = useState(true);
+
+            // 1. Check if user is already logged in on page load
+            useEffect(() => {
+                checkSession();
+            }, []);
+
+            const checkSession = async () => {
+                try {
+                    const res = await fetch(`${API_URL}/auth/me`, { credentials: 'include' });
+                    if (res.ok) {
+                        const userData = await res.json();
+                        setUser(userData);
+                        setView('list');
+                        fetchRecipes();
+                    } else {
+                        setView('login');
+                    }
+                } catch (err) {
+                    setView('login');
+                }
+            };
+
+            const handleLogout = async () => {
+                await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
+                setUser(null);
+                setRecipes([]);
+                setView('login');
+            };
+
+            // Fetch recipes (Now includes credentials!)
+            const fetchRecipes = async () => {
+                setLoadingRecipes(true);
+                try {
+                    const res = await fetch(`${API_URL}/recipes`, { credentials: 'include' });
+                    const data = await res.json();
+                    
+                    // Only set recipes if the response is OK and actually an array
+                    if (res.ok && Array.isArray(data)) {
+                        setRecipes(data);
+                    } else {
+                        console.error("Backend error fetching recipes:", data);
+                        setRecipes([]); // Fallback to empty array so .map() doesn't crash
+                        
+                        // If we get a 401 Unauthorized, boot them back to the login screen
+                        if (res.status === 401) setView('login');
+                    }
+                } catch (err) {
+                    console.error("Fetch error:", err);
+                    setRecipes([]);
+                } finally {
+                    setLoadingRecipes(false);
+                }
+            };
+
+            // Fetch single recipe
+            const loadFullRecipe = async (id, targetView) => {
+                try {
+                    const res = await fetch(`${API_URL}/recipes/${id}`, { credentials: 'include' });
+                    const data = await res.json();
+                    setSelectedRecipe(data);
+                    setView(targetView);
+                } catch (err) {
+                    alert("Could not load recipe details.");
+                }
+            };
+
+            const handleSave = async (recipeData) => {
+                const method = view === 'edit' ? 'PUT' : 'POST';
+                const url = view === 'edit' ? `${API_URL}/recipes/${selectedRecipe.id}` : `${API_URL}/recipes`;
+                
+                try {
+                    const response = await fetch(url, {
+                        method: method,
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify(recipeData)
+                    });
+                    
+                    if (response.ok) {
+                        setView('list');
+                        fetchRecipes();
+                    }
+                } catch (err) {
+                    console.error("Save error:", err);
+                }
+            };
+
+            const handleDelete = async (id) => {
+                if (!confirm("Are you sure you want to delete this recipe?")) return;
+                try {
+                    const response = await fetch(`${API_URL}/recipes/${id}`, {
+                        method: 'DELETE',
+                        credentials: 'include'
+                    });
+                    if (response.ok) {
+                        setView('list');
+                        fetchRecipes();
+                    }
+                } catch (err) {
+                    alert("Failed to delete recipe.");
+                }
+            };
+
+            // Loading State
+            if (view === 'loading') {
+                return <div className="min-h-screen flex items-center justify-center text-xl text-gray-500">Waking up server...</div>;
+            }
+
+            // Auth State
+            if (view === 'login') {
+                return <AuthForm onLogin={(userData) => { setUser(userData); setView('list'); fetchRecipes(); }} />;
+            }
+
+            // Main App View
+            return (
+                <div className="max-w-5xl mx-auto p-4 md:p-8">
+                    <header className="flex justify-between items-center mb-8 border-b pb-6">
+                        <div className="cursor-pointer" onClick={() => setView('list')}>
+                            <h1 className="text-3xl font-bold text-orange-600">FlavorFolder</h1>
+                            <p className="text-sm text-gray-500">Welcome back, {user.username}</p>
+                        </div>
+                        <div className="flex gap-4">
+                            <button onClick={handleLogout} className="text-gray-500 hover:text-gray-800 font-medium">
+                                Logout
+                            </button>
+                            <button onClick={() => { setSelectedRecipe(null); setView('add'); }} className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-2 rounded-full font-semibold transition shadow-lg">
+                                + New Recipe
+                            </button>
+                        </div>
+                    </header>
+
+                    {view === 'list' && <RecipeList recipes={recipes} loading={loadingRecipes} onViewDetail={(id) => loadFullRecipe(id, 'details')} />}
+                    {view === 'details' && selectedRecipe && <RecipeDetail recipe={selectedRecipe} onBack={() => setView('list')} onEdit={() => setView('edit')} onDelete={handleDelete} />}
+                    {(view === 'add' || view === 'edit') && <RecipeForm initialData={selectedRecipe} onSave={handleSave} onCancel={() => setView('list')} />}
+                </div>
+            );
+        };
+
+        // --- NEW AUTH COMPONENT ---
+        const AuthForm = ({ onLogin }) => {
+            const [isRegistering, setIsRegistering] = useState(false);
+            const [formData, setFormData] = useState({ username: '', email: '', password: '' });
+            const [error, setError] = useState('');
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setError('');
+                const endpoint = isRegistering ? '/auth/register' : '/auth/login';
+                
+                try {
+                    const res = await fetch(`${API_URL}${endpoint}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include', // Important to receive the session cookie!
+                        body: JSON.stringify(formData)
+                    });
+
+                    const data = await res.json();
+                    
+                    if (res.ok) {
+                        onLogin(data);
+                    } else {
+                        setError(data.error || data.message || 'Authentication failed');
+                    }
+                } catch (err) {
+                    setError('Server connection failed.');
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+                    <form onSubmit={handleSubmit} className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border">
+                        <div className="text-center mb-8">
+                            <h1 className="text-3xl font-bold text-orange-600 mb-2">FlavorFolder</h1>
+                            <h2 className="text-xl font-semibold text-gray-800">{isRegistering ? 'Create an Account' : 'Welcome Back'}</h2>
+                        </div>
+                        
+                        {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm text-center border border-red-100">{error}</div>}
+
+                        <div className="space-y-4">
+                            {isRegistering && (
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Username</label>
+                                    <input required className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none" 
+                                        type="text" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} />
+                                </div>
+                            )}
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Email</label>
+                                <input required className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none" 
+                                    type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Password</label>
+                                <input required className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none" 
+                                    type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
+                            </div>
+                        </div>
+
+                        <button type="submit" className="w-full bg-orange-600 text-white py-3 rounded-xl font-bold hover:bg-orange-700 transition shadow-lg mt-8 mb-4">
+                            {isRegistering ? 'Sign Up' : 'Login'}
+                        </button>
+
+                        <p className="text-center text-sm text-gray-500">
+                            {isRegistering ? 'Already have an account?' : "Don't have an account?"}
+                            <button type="button" onClick={() => { setIsRegistering(!isRegistering); setError(''); }} className="text-orange-600 font-bold ml-1 hover:underline">
+                                {isRegistering ? 'Login here' : 'Sign up here'}
+                            </button>
+                        </p>
+                    </form>
+                </div>
+            );
+        };
+
+        // ... Keep existing RecipeList, RecipeDetail, and RecipeForm components exactly as they were ...
+        // (Just ensure the RecipeDetail component receives and uses the onDelete prop as discussed previously)
+
+        const RecipeList = ({ recipes, loading, onViewDetail }) => { /* Previous Code */ 
+            if (loading) return <div className="text-center py-20 text-xl text-gray-400">Loading your kitchen...</div>;
+            if (recipes.length === 0) return <div className="text-center py-20 bg-white rounded-xl border-2 border-dashed">No recipes found.</div>;
+
+            return (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {recipes.map(r => (
+                        <div key={r.id} className="bg-white rounded-2xl shadow-sm border overflow-hidden hover:shadow-xl transition-shadow duration-300 flex flex-col">
+                            <div className="p-6 flex-grow">
+                                <h3 className="text-xl font-bold mb-2 text-gray-800">{r.title}</h3>
+                                <div className="flex gap-3 text-xs font-medium text-gray-400 mb-4 uppercase tracking-wider">
+                                    <span>⏲️ {r.cooking_time_minutes} min</span>
+                                    <span>•</span>
+                                    <span>👥 {r.servings} Servings</span>
+                                </div>
+                                <p className="text-gray-600 line-clamp-3 text-sm mb-6 leading-relaxed">
+                                    {r.instructions || "No instructions provided."}
+                                </p>
+                            </div>
+                            <div className="px-6 pb-6 mt-auto">
+                                <button 
+                                    onClick={() => onViewDetail(r.id)}
+                                    className="w-full text-center py-2 rounded-lg bg-orange-50 text-orange-600 font-bold hover:bg-orange-100 transition"
+                                >
+                                    View Full Details
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        const RecipeDetail = ({ recipe, onBack, onEdit, onDelete }) => { /* Previous Code + Delete Button */ 
+            return (
+                <div className="bg-white rounded-3xl shadow-xl border overflow-hidden animate-in fade-in duration-500">
+                    <div className="p-8">
+                        <button onClick={onBack} className="text-gray-400 hover:text-gray-600 mb-6 flex items-center gap-2">
+                            ← Back to Cookbook
+                        </button>
+                        
+                        <div className="flex justify-between items-start mb-8">
+                            <div>
+                                <h2 className="text-4xl font-extrabold text-gray-900 mb-2">{recipe.title}</h2>
+                                <div className="flex gap-6 text-gray-500">
+                                    <span className="flex items-center gap-1">⏲️ {recipe.cooking_time_minutes} Minutes</span>
+                                    <span className="flex items-center gap-1">👥 Serves {recipe.servings}</span>
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={onEdit} className="bg-blue-50 text-blue-600 px-6 py-2 rounded-xl font-bold hover:bg-blue-100 transition">
+                                    Edit
+                                </button>
+                                <button onClick={() => onDelete(recipe.id)} className="bg-red-50 text-red-600 px-6 py-2 rounded-xl font-bold hover:bg-red-100 transition">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid md:grid-cols-3 gap-12">
+                            <div className="md:col-span-1">
+                                <h3 className="text-lg font-bold mb-4 text-orange-600 uppercase tracking-widest">Ingredients</h3>
+                                <ul className="space-y-3">
+                                    {recipe.Ingredients?.map((ing, i) => (
+                                        <li key={i} className="flex justify-between border-b pb-2 border-gray-100">
+                                            <span className="font-medium">{ing.name}</span>
+                                            <span className="text-gray-500">{ing.RecipeIngredient.amount} {ing.RecipeIngredient.unit}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div className="md:col-span-2">
+                                <h3 className="text-lg font-bold mb-4 text-orange-600 uppercase tracking-widest">Instructions</h3>
+                                <p className="text-gray-700 leading-loose whitespace-pre-wrap italic">
+                                    {recipe.instructions}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const RecipeForm = ({ onSave, onCancel, initialData }) => { /* Previous Code */ 
+            const [formData, setFormData] = useState({
+                title: initialData?.title || '',
+                instructions: initialData?.instructions || '',
+                cooking_time_minutes: initialData?.cooking_time_minutes || '',
+                servings: initialData?.servings || ''
+            });
+
+            const [ingredients, setIngredients] = useState(
+                initialData?.Ingredients?.map(ing => ({
+                    name: ing.name,
+                    amount: ing.RecipeIngredient.amount,
+                    unit: ing.RecipeIngredient.unit
+                })) || [{ name: '', amount: '', unit: '' }]
+            );
+
+            const updateIngredient = (index, field, value) => {
+                const list = [...ingredients];
+                list[index][field] = value;
+                setIngredients(list);
+            };
+
+            const addIngredient = () => setIngredients([...ingredients, { name: '', amount: '', unit: '' }]);
+            const removeIngredient = (index) => setIngredients(ingredients.filter((_, i) => i !== index));
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave({ ...formData, ingredients });
+            };
+
+            return (
+                <form onSubmit={handleSubmit} className="bg-white p-8 rounded-3xl shadow-xl border space-y-6">
+                    <h2 className="text-2xl font-bold">{initialData ? 'Update Recipe' : 'Create New Recipe'}</h2>
+                    
+                    <div className="grid md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Recipe Title</label>
+                                <input required className="w-full border rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none" 
+                                    value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Time (mins)</label>
+                                    <input type="number" className="w-full border rounded-xl p-3" 
+                                        value={formData.cooking_time_minutes} onChange={e => setFormData({...formData, cooking_time_minutes: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Servings</label>
+                                    <input type="number" className="w-full border rounded-xl p-3" 
+                                        value={formData.servings} onChange={e => setFormData({...formData, servings: e.target.value})} />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Instructions</label>
+                                <textarea rows="8" className="w-full border rounded-xl p-3" 
+                                    value={formData.instructions} onChange={e => setFormData({...formData, instructions: e.target.value})} />
+                            </div>
+                        </div>
+
+                        <div className="bg-gray-50 p-6 rounded-2xl">
+                            <h3 className="font-bold mb-4 flex justify-between">
+                                Ingredients
+                                <button type="button" onClick={addIngredient} className="text-orange-600 text-sm">+ Add</button>
+                            </h3>
+                            <div className="space-y-3">
+                                {ingredients.map((ing, i) => (
+                                    <div key={i} className="flex gap-2">
+                                        <input placeholder="Ingredient" className="flex-1 border p-2 rounded-lg text-sm" value={ing.name} onChange={e => updateIngredient(i, 'name', e.target.value)} />
+                                        <input placeholder="Qty" className="w-16 border p-2 rounded-lg text-sm" value={ing.amount} onChange={e => updateIngredient(i, 'amount', e.target.value)} />
+                                        <input placeholder="Unit" className="w-16 border p-2 rounded-lg text-sm" value={ing.unit} onChange={e => updateIngredient(i, 'unit', e.target.value)} />
+                                        <button type="button" onClick={() => removeIngredient(i)} className="text-red-400 font-bold text-lg px-2">×</button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-4 pt-4">
+                        <button type="submit" className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-bold hover:bg-orange-700 transition shadow-lg">
+                            {initialData ? 'Save Changes' : 'Publish Recipe'}
+                        </button>
+                        <button type="button" onClick={onCancel} className="px-8 bg-gray-100 text-gray-500 rounded-2xl font-bold hover:bg-gray-200 transition">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
