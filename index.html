@@ -314,10 +314,10 @@
                             <div className="md:col-span-1">
                                 <h3 className="text-lg font-bold mb-4 text-orange-600 uppercase tracking-widest">Ingredients</h3>
                                 <ul className="space-y-3">
-                                    {recipe.Ingredients?.map((ing, i) => (
+                                    {recipe.RecipeIngredients?.map((ri, i) => (
                                         <li key={i} className="flex justify-between border-b pb-2 border-gray-100">
-                                            <span className="font-medium">{ing.name}</span>
-                                            <span className="text-gray-500">{ing.RecipeIngredient.amount} {ing.RecipeIngredient.unit}</span>
+                                            <span className="font-medium">{ri.Ingredient?.name}</span>
+                                            <span className="text-gray-500">{ri.amount} {ri.Unit?.name || ''}</span>
                                         </li>
                                     ))}
                                 </ul>
@@ -343,10 +343,10 @@
             });
 
             const [ingredients, setIngredients] = useState(
-                initialData?.Ingredients?.map(ing => ({
-                    name: ing.name,
-                    amount: ing.RecipeIngredient.amount,
-                    unit: ing.RecipeIngredient.unit
+                initialData?.RecipeIngredients?.map(ri => ({
+                    name: ri.Ingredient?.name || '',
+                    amount: ri.amount || '',
+                    unit: ri.Unit?.name || ''
                 })) || [{ name: '', amount: '', unit: '' }]
             );
 

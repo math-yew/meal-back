@@ -59,17 +59,31 @@ const Ingredient = sequelize.define('Ingredient', {
   name: { type: DataTypes.STRING, unique: true, allowNull: false }
 }, { tableName: 'ingredients', timestamps: false });
 
-// Junction Table with extra fields
+// Unit Model (NEW)
+const Unit = sequelize.define('Unit', {
+  name: { type: DataTypes.STRING, unique: true, allowNull: false }
+}, { tableName: 'units', timestamps: false });
+
+// Junction Table (UPDATED: removed string 'unit', foreign keys are handled below)
 const RecipeIngredient = sequelize.define('RecipeIngredient', {
-  amount: DataTypes.DECIMAL(10, 2),
-  unit: DataTypes.STRING
+  amount: DataTypes.DECIMAL(10, 2)
 }, { tableName: 'recipe_ingredients', timestamps: false });
 
-// Associations
-Recipe.belongsToMany(Ingredient, { through: RecipeIngredient, foreignKey: 'recipe_id' });
-Ingredient.belongsToMany(Recipe, { through: RecipeIngredient, foreignKey: 'ingredient_id' });
+Recipe.hasMany(RecipeIngredient, { foreignKey: 'recipe_id' });
+RecipeIngredient.belongsTo(Recipe, { foreignKey: 'recipe_id' });
+
+Ingredient.hasMany(RecipeIngredient, { foreignKey: 'ingredient_id' });
+RecipeIngredient.belongsTo(Ingredient, { foreignKey: 'ingredient_id' });
+
+Unit.hasMany(RecipeIngredient, { foreignKey: 'unit_id' });
+RecipeIngredient.belongsTo(Unit, { foreignKey: 'unit_id' });
+
 User.hasMany(Recipe, { foreignKey: 'user_id' });
 Recipe.belongsTo(User, { foreignKey: 'user_id' });
+
+// You can keep belongsToMany for convenience, but the above rules the nested queries
+Recipe.belongsToMany(Ingredient, { through: RecipeIngredient, foreignKey: 'recipe_id' });
+Ingredient.belongsToMany(Recipe, { through: RecipeIngredient, foreignKey: 'ingredient_id' });
 
 // Initialize Auth
 const { router: authRouter, passport } = setupAuth(User);
@@ -98,17 +112,17 @@ app.get('/recipes', requireAuth, async (req, res) => {
     }
 });
 
-// GET SINGLE RECIPE (Must belong to user)
 app.get('/recipes/:id', requireAuth, async (req, res) => {
     try {
         const recipe = await Recipe.findOne({
             where: { 
                 id: req.params.id, 
-                user_id: req.user.id // Prevents viewing other people's recipes
+                user_id: req.user.id 
             },
             include: [{
-                model: Ingredient,
-                through: { attributes: ['amount', 'unit'] }
+                // Explicitly include the junction table so we can fetch both Ingredient AND Unit
+                model: RecipeIngredient,
+                include: [Ingredient, Unit] 
             }]
         });
         if (!recipe) return res.status(404).json({ error: "Recipe not found" });
@@ -124,13 +138,12 @@ app.post('/recipes', requireAuth, async (req, res) => {
     try {
         const { title, instructions, cooking_time_minutes, servings, ingredients } = req.body;
         
-        // Inject the user_id into the new recipe
         const recipe = await Recipe.create({
             title, 
             instructions, 
             cooking_time_minutes, 
             servings,
-            user_id: req.user.id // <--- Assign ownership
+            user_id: req.user.id
         }, { transaction: t });
 
         if (ingredients && ingredients.length > 0) {
@@ -139,11 +152,21 @@ app.post('/recipes', requireAuth, async (req, res) => {
                     where: { name: item.name },
                     transaction: t
                 });
+
+                let unitId = null;
+                if (item.unit) {
+                    const [unit] = await Unit.findOrCreate({
+                        where: { name: item.unit },
+                        transaction: t
+                    });
+                    unitId = unit.id;
+                }
+
                 await RecipeIngredient.create({
                     recipe_id: recipe.id,
                     ingredient_id: ingredient.id,
                     amount: item.amount,
-                    unit: item.unit
+                    unit_id: unitId // Use the new ID
                 }, { transaction: t });
             }
         }
@@ -161,7 +184,6 @@ app.put('/recipes/:id', requireAuth, async (req, res) => {
     try {
         const { title, instructions, cooking_time_minutes, servings, ingredients } = req.body;
         
-        // Find recipe AND ensure it belongs to the user
         const recipe = await Recipe.findOne({ 
             where: { id: req.params.id, user_id: req.user.id } 
         });
@@ -179,11 +201,20 @@ app.put('/recipes/:id', requireAuth, async (req, res) => {
                     transaction: t
                 });
 
+                let unitId = null;
+                if (item.unit) {
+                    const [unit] = await Unit.findOrCreate({
+                        where: { name: item.unit },
+                        transaction: t
+                    });
+                    unitId = unit.id;
+                }
+
                 await RecipeIngredient.create({
                     recipe_id: recipe.id,
                     ingredient_id: ingredient.id,
                     amount: item.amount,
-                    unit: item.unit
+                    unit_id: unitId // Use the new ID
                 }, { transaction: t });
             }
         }
