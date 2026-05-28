@@ -69,6 +69,20 @@ const RecipeIngredient = sequelize.define('RecipeIngredient', {
   amount: DataTypes.DECIMAL(10, 2)
 }, { tableName: 'recipe_ingredients', timestamps: false });
 
+const MealPlan = sequelize.define('MealPlan', {
+    name: { type: DataTypes.STRING, allowNull: false }
+}, { tableName: 'meal_plans', timestamps: false });
+
+const MealPlanRecipe = sequelize.define('MealPlanRecipe', {
+}, { tableName: 'meal_plan_recipes', timestamps: false });
+
+// --- NEW ASSOCIATIONS ---
+User.hasMany(MealPlan, { foreignKey: 'user_id' });
+MealPlan.belongsTo(User, { foreignKey: 'user_id' });
+
+MealPlan.belongsToMany(Recipe, { through: MealPlanRecipe, foreignKey: 'meal_plan_id' });
+Recipe.belongsToMany(MealPlan, { through: MealPlanRecipe, foreignKey: 'recipe_id' });
+
 Recipe.hasMany(RecipeIngredient, { foreignKey: 'recipe_id' });
 RecipeIngredient.belongsTo(Recipe, { foreignKey: 'recipe_id' });
 
@@ -245,6 +259,77 @@ app.delete('/recipes/:id', requireAuth, async (req, res) => {
         res.json({ message: "Recipe deleted" });
     } catch (err) {
         await t.rollback();
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/meal-plans', requireAuth, async (req, res) => {
+    try {
+        const plans = await MealPlan.findAll({
+            where: { user_id: req.user.id },
+            include: [Recipe],
+            order: [['created_at', 'DESC']]
+        });
+        res.json(plans);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create a new Meal Plan
+app.post('/meal-plans', requireAuth, async (req, res) => {
+    try {
+        const { name, recipe_ids } = req.body;
+        const plan = await MealPlan.create({ name, user_id: req.user.id });
+        
+        // Sequelize makes it easy to bulk-insert junction table rows
+        if (recipe_ids && recipe_ids.length > 0) {
+            await plan.addRecipes(recipe_ids); 
+        }
+        res.status(201).json(plan);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GENERATE GROCERY LIST API
+app.get('/meal-plans/:id/grocery-list', requireAuth, async (req, res) => {
+    try {
+        const plan = await MealPlan.findOne({
+            where: { id: req.params.id, user_id: req.user.id },
+            include: [{
+                model: Recipe,
+                include: [{
+                    model: RecipeIngredient,
+                    include: [Ingredient, Unit]
+                }]
+            }]
+        });
+
+        if (!plan) return res.status(404).json({ error: "Meal plan not found" });
+
+        const groceryList = {};
+
+        // Loop through all recipes -> ingredients -> units to aggregate amounts
+        plan.Recipes.forEach(recipe => {
+            recipe.RecipeIngredients.forEach(ri => {
+                const ingName = ri.Ingredient.name;
+                const unitName = ri.Unit ? ri.Unit.name : '';
+                const amount = parseFloat(ri.amount) || 0;
+                
+                // Group by ingredient AND unit so "cups" don't mix with "tablespoons"
+                const key = `${ingName}_${unitName}`;
+                
+                if (!groceryList[key]) {
+                    groceryList[key] = { name: ingName, amount: 0, unit: unitName };
+                }
+                groceryList[key].amount += amount;
+            });
+        });
+
+        // Convert the object back into an array to send to the frontend
+        res.json(Object.values(groceryList));
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
